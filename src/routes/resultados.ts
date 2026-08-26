@@ -12,9 +12,9 @@ router.get('/:jornada', async (req, res) => {
   }
 
   // Traer candidatos de la jornada
-  const { data: candidatos, error: errorCandidatos } = await supabase
+    const { data: candidatos, error: errorCandidatos } = await supabase
     .from('candidatos')
-    .select('id, nombre, ficha')
+    .select('id, nombre, ficha, foto_url')
     .eq('jornada', jornadaUpper)
     .eq('activo', true);
 
@@ -33,9 +33,9 @@ router.get('/:jornada', async (req, res) => {
   }
 
   // Contar votos por candidato
-  const resultados = candidatos.map(c => {
+    const resultados = candidatos.map(c => {
     const total = votos.filter(v => v.candidato_id === c.id).length;
-    return { id: c.id, nombre: c.nombre, ficha: c.ficha, votos: total };
+    return { id: c.id, nombre: c.nombre, ficha: c.ficha, foto_url: c.foto_url, votos: total };
   });
 
   // Ordenar de mayor a menor

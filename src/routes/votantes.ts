@@ -4,20 +4,30 @@ import { supabase } from '../supabaseClient';
 const router = Router();
 
 // POST /api/votante/verificar
-// body: { cedula, nombre, jornada }
+// body: { cedula }
 router.post('/verificar', async (req, res) => {
-  const { cedula, nombre, jornada } = req.body;
+  const { cedula } = req.body;
 
-  if (!cedula || !nombre || !jornada) {
-    return res.status(400).json({ error: 'Faltan datos: cedula, nombre y jornada son requeridos.' });
+  if (!cedula) {
+    return res.status(400).json({ error: 'La cédula es requerida.' });
   }
 
-  const jornadaUpper = jornada.toUpperCase();
-  if (!['MANANA', 'TARDE', 'NOCHE'].includes(jornadaUpper)) {
-    return res.status(400).json({ error: 'Jornada inválida.' });
+  // 1. Buscar al aprendiz en el padrón
+  const { data: aprendiz, error: errorAprendiz } = await supabase
+    .from('aprendices')
+    .select('*')
+    .eq('cedula', cedula)
+    .maybeSingle();
+
+  if (errorAprendiz) {
+    return res.status(500).json({ error: errorAprendiz.message });
   }
 
-  // Buscar si el votante ya existe
+  if (!aprendiz) {
+    return res.status(404).json({ error: 'Esta cédula no está habilitada para votar.' });
+  }
+
+  // 2. Ver si ya existe registro en votantes
   const { data: existente, error: errorBusqueda } = await supabase
     .from('votantes')
     .select('*')
@@ -29,10 +39,12 @@ router.post('/verificar', async (req, res) => {
   }
 
   if (existente) {
-    // Ya existe: devolvemos su estado (yaVoto o no)
     return res.json({
       votanteId: existente.id,
       yaVoto: existente.ya_voto,
+      nombre: aprendiz.nombre,
+      ficha: aprendiz.ficha,
+      programa: aprendiz.programa,
       jornada: existente.jornada,
       mensaje: existente.ya_voto
         ? 'Esta cédula ya registró su voto.'
@@ -40,10 +52,14 @@ router.post('/verificar', async (req, res) => {
     });
   }
 
-  // No existe: lo creamos
+  // 3. No existe: lo creamos usando los datos del padrón
   const { data: nuevo, error: errorCrear } = await supabase
     .from('votantes')
-    .insert({ cedula, nombre, jornada: jornadaUpper })
+    .insert({
+      cedula: aprendiz.cedula,
+      nombre: aprendiz.nombre,
+      jornada: aprendiz.jornada
+    })
     .select()
     .single();
 
@@ -54,6 +70,9 @@ router.post('/verificar', async (req, res) => {
   res.json({
     votanteId: nuevo.id,
     yaVoto: false,
+    nombre: aprendiz.nombre,
+    ficha: aprendiz.ficha,
+    programa: aprendiz.programa,
     jornada: nuevo.jornada,
     mensaje: 'Votante registrado, puede votar.'
   });

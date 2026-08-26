@@ -6,7 +6,8 @@ import candidatosRouter from './routes/candidatos';
 import votanteRouter from './routes/votantes';
 import votarRouter from './routes/votar';
 import resultadosRouter from './routes/resultados';
-
+import aprendizRouter from './routes/aprendiz';
+// ...
 dotenv.config();
 
 const app = express();
@@ -23,6 +24,7 @@ app.use('/api/candidatos', candidatosRouter);
 app.use('/api/votante', votanteRouter);
 app.use('/api/votar', votarRouter);
 app.use('/api/resultados', resultadosRouter);
+app.use('/api/aprendiz', aprendizRouter);
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
