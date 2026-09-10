@@ -1,49 +1,38 @@
 import { Router } from 'express';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseClient';
 
 const router = Router();
 
-// GET /api/resultados/:jornada
 router.get('/:jornada', async (req, res) => {
   const jornadaUpper = req.params.jornada.toUpperCase();
-
   if (!['MANANA', 'TARDE', 'NOCHE'].includes(jornadaUpper)) {
     return res.status(400).json({ error: 'Jornada inválida.' });
   }
 
-  // Traer candidatos de la jornada
-    const { data: candidatos, error: errorCandidatos } = await supabase
-    .from('candidatos')
-    .select('id, nombre, ficha, foto_url')
-    .eq('jornada', jornadaUpper)
-    .eq('activo', true);
+  try {
+    const candidatosSnap = await db.collection('candidatos')
+      .where('jornada', '==', jornadaUpper)
+      .where('activo', '==', true)
+      .get();
 
-  if (errorCandidatos) {
-    return res.status(500).json({ error: errorCandidatos.message });
+    const votosSnap = await db.collection('votos')
+      .where('jornada', '==', jornadaUpper)
+      .get();
+
+    const votos = votosSnap.docs.map(d => d.data());
+
+    const resultados = candidatosSnap.docs.map(doc => {
+      const c: any = doc.data();
+      const total = votos.filter((v: any) => v.candidatoId === doc.id).length;
+      return { id: doc.id, nombre: c.nombre, ficha: c.ficha, foto_url: c.foto_url, votos: total };
+    });
+
+    resultados.sort((a, b) => b.votos - a.votos);
+
+    res.json({ jornada: jornadaUpper, totalVotos: votos.length, resultados });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
-
-  // Traer todos los votos de esa jornada
-  const { data: votos, error: errorVotos } = await supabase
-    .from('votos')
-    .select('candidato_id')
-    .eq('jornada', jornadaUpper);
-
-  if (errorVotos) {
-    return res.status(500).json({ error: errorVotos.message });
-  }
-
-  // Contar votos por candidato
-    const resultados = candidatos.map(c => {
-    const total = votos.filter(v => v.candidato_id === c.id).length;
-    return { id: c.id, nombre: c.nombre, ficha: c.ficha, foto_url: c.foto_url, votos: total };
-  });
-
-  // Ordenar de mayor a menor
-  resultados.sort((a, b) => b.votos - a.votos);
-
-  const totalVotos = votos.length;
-
-  res.json({ jornada: jornadaUpper, totalVotos, resultados });
 });
 
 export default router;

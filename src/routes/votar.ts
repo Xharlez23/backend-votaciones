@@ -1,61 +1,48 @@
 import { Router } from 'express';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseClient';
 
 const router = Router();
 
-// POST /api/votar
-// body: { votanteId, candidatoId, jornada }
 router.post('/', async (req, res) => {
   const { votanteId, candidatoId, jornada } = req.body;
-
   if (!votanteId || !candidatoId || !jornada) {
     return res.status(400).json({ error: 'Faltan datos: votanteId, candidatoId y jornada son requeridos.' });
   }
 
-  // 1. Verificar el estado actual del votante (doble chequeo de seguridad)
-  const { data: votante, error: errorVotante } = await supabase
-    .from('votantes')
-    .select('*')
-    .eq('id', votanteId)
-    .single();
+  const votanteRef = db.collection('votantes').doc(votanteId);
+  const votoRef = db.collection('votos').doc(votanteId); // mismo ID que el votante -> evita doble voto
 
-  if (errorVotante || !votante) {
-    return res.status(404).json({ error: 'Votante no encontrado.' });
-  }
+  try {
+    await db.runTransaction(async (t) => {
+      const votanteDoc = await t.get(votanteRef);
+      if (!votanteDoc.exists) {
+        throw { status: 404, message: 'Votante no encontrado.' };
+      }
 
-  if (votante.ya_voto) {
-    return res.status(409).json({ error: 'Este votante ya emitió su voto anteriormente.' });
-  }
+      const votante: any = votanteDoc.data();
+      if (votante.yaVoto) {
+        throw { status: 409, message: 'Este votante ya emitió su voto anteriormente.' };
+      }
 
-  // 2. Insertar el voto (la restricción UNIQUE en votante_id protege contra doble voto
-  //    incluso si dos peticiones llegan al mismo tiempo)
-  const { error: errorVoto } = await supabase
-    .from('votos')
-    .insert({
-      votante_id: votanteId,
-      candidato_id: candidatoId,
-      jornada: jornada.toUpperCase()
+      const votoDoc = await t.get(votoRef);
+      if (votoDoc.exists) {
+        throw { status: 409, message: 'Este votante ya emitió su voto anteriormente.' };
+      }
+
+      t.set(votoRef, {
+        candidatoId,
+        jornada: jornada.toUpperCase(),
+        creadoEn: new Date().toISOString()
+      });
+
+      t.update(votanteRef, { yaVoto: true });
     });
 
-  if (errorVoto) {
-    // Si el error es por violar el UNIQUE, significa que ya había votado
-    if (errorVoto.code === '23505') {
-      return res.status(409).json({ error: 'Este votante ya emitió su voto anteriormente.' });
-    }
-    return res.status(500).json({ error: errorVoto.message });
+    res.json({ mensaje: 'Voto registrado con éxito.' });
+  } catch (error: any) {
+    const status = error.status || 500;
+    res.status(status).json({ error: error.message || 'Error al registrar el voto.' });
   }
-
-  // 3. Marcar al votante como que ya votó
-  const { error: errorUpdate } = await supabase
-    .from('votantes')
-    .update({ ya_voto: true })
-    .eq('id', votanteId);
-
-  if (errorUpdate) {
-    return res.status(500).json({ error: errorUpdate.message });
-  }
-
-  res.json({ mensaje: 'Voto registrado con éxito.' });
 });
 
 export default router;

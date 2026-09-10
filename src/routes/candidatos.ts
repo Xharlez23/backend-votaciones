@@ -1,29 +1,27 @@
 import { Router } from 'express';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseClient';
 
 const router = Router();
 
-// GET /api/candidatos/:jornada  -> ej: /api/candidatos/MANANA
 router.get('/:jornada', async (req, res) => {
-  const { jornada } = req.params;
-  const jornadaUpper = jornada.toUpperCase();
-
+  const jornadaUpper = req.params.jornada.toUpperCase();
   if (!['MANANA', 'TARDE', 'NOCHE'].includes(jornadaUpper)) {
-    return res.status(400).json({ error: 'Jornada inválida. Usa MANANA, TARDE o NOCHE.' });
+    return res.status(400).json({ error: 'Jornada inválida.' });
   }
 
-  const { data, error } = await supabase
-    .from('candidatos')
-    .select('*')
-    .eq('jornada', jornadaUpper)
-    .eq('activo', true)
-    .order('nombre', { ascending: true });
+  try {
+    const snapshot = await db.collection('candidatos')
+      .where('jornada', '==', jornadaUpper)
+      .where('activo', '==', true)
+      .get();
 
-  if (error) {
-    return res.status(500).json({ error: error.message });
+    const candidatos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    candidatos.sort((a: any, b: any) => (a.numero_tarjeton ?? 0) - (b.numero_tarjeton ?? 0));
+
+    res.json(candidatos);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
-
-  res.json(data);
 });
 
 export default router;

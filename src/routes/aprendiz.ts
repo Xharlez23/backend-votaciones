@@ -1,27 +1,18 @@
 import { Router } from 'express';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseClient';
 
 const router = Router();
 
-// GET /api/aprendiz/:cedula
 router.get('/:cedula', async (req, res) => {
-  const { cedula } = req.params;
-  console.log(`Buscando aprendiz con cédula: ${cedula}`);
-  const { data, error } = await supabase
-    .from('aprendices')
-    .select('*')
-    .eq('cedula', cedula)
-    .maybeSingle();
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
+  try {
+    const doc = await db.collection('aprendices').doc(req.params.cedula).get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'No se encontró un aprendiz con esa cédula.' });
+    }
+    res.json({ id: doc.id, ...doc.data() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
-
-  if (!data) {
-    return res.status(404).json({ error: 'No se encontró un aprendiz con esa cédula.' });
-  }
-
-  res.json(data);
 });
 
 export default router;

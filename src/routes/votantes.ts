@@ -1,81 +1,54 @@
 import { Router } from 'express';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseClient';
 
 const router = Router();
 
-// POST /api/votante/verificar
-// body: { cedula }
 router.post('/verificar', async (req, res) => {
   const { cedula } = req.body;
+  if (!cedula) return res.status(400).json({ error: 'La cédula es requerida.' });
 
-  if (!cedula) {
-    return res.status(400).json({ error: 'La cédula es requerida.' });
-  }
+  try {
+    const aprendizDoc = await db.collection('aprendices').doc(cedula).get();
+    if (!aprendizDoc.exists) {
+      return res.status(404).json({ error: 'Esta cédula no está habilitada para votar.' });
+    }
+    const aprendiz: any = aprendizDoc.data();
 
-  // 1. Buscar al aprendiz en el padrón
-  const { data: aprendiz, error: errorAprendiz } = await supabase
-    .from('aprendices')
-    .select('*')
-    .eq('cedula', cedula)
-    .maybeSingle();
+    const votanteRef = db.collection('votantes').doc(cedula);
+    const votanteDoc = await votanteRef.get();
 
-  if (errorAprendiz) {
-    return res.status(500).json({ error: errorAprendiz.message });
-  }
+    if (votanteDoc.exists) {
+      const votante: any = votanteDoc.data();
+      return res.json({
+        votanteId: cedula,
+        yaVoto: votante.yaVoto,
+        nombre: aprendiz.nombre,
+        ficha: aprendiz.ficha,
+        programa: aprendiz.programa,
+        jornada: votante.jornada,
+        mensaje: votante.yaVoto ? 'Esta cédula ya registró su voto.' : 'Votante verificado, puede votar.'
+      });
+    }
 
-  if (!aprendiz) {
-    return res.status(404).json({ error: 'Esta cédula no está habilitada para votar.' });
-  }
+    await votanteRef.set({
+      nombre: aprendiz.nombre,
+      jornada: aprendiz.jornada,
+      yaVoto: false,
+      creadoEn: new Date().toISOString()
+    });
 
-  // 2. Ver si ya existe registro en votantes
-  const { data: existente, error: errorBusqueda } = await supabase
-    .from('votantes')
-    .select('*')
-    .eq('cedula', cedula)
-    .maybeSingle();
-
-  if (errorBusqueda) {
-    return res.status(500).json({ error: errorBusqueda.message });
-  }
-
-  if (existente) {
-    return res.json({
-      votanteId: existente.id,
-      yaVoto: existente.ya_voto,
+    res.json({
+      votanteId: cedula,
+      yaVoto: false,
       nombre: aprendiz.nombre,
       ficha: aprendiz.ficha,
       programa: aprendiz.programa,
-      jornada: existente.jornada,
-      mensaje: existente.ya_voto
-        ? 'Esta cédula ya registró su voto.'
-        : 'Votante verificado, puede votar.'
+      jornada: aprendiz.jornada,
+      mensaje: 'Votante registrado, puede votar.'
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
-
-  // 3. No existe: lo creamos usando los datos del padrón
-  const { data: nuevo, error: errorCrear } = await supabase
-    .from('votantes')
-    .insert({
-      cedula: aprendiz.cedula,
-      nombre: aprendiz.nombre,
-      jornada: aprendiz.jornada
-    })
-    .select()
-    .single();
-
-  if (errorCrear) {
-    return res.status(500).json({ error: errorCrear.message });
-  }
-
-  res.json({
-    votanteId: nuevo.id,
-    yaVoto: false,
-    nombre: aprendiz.nombre,
-    ficha: aprendiz.ficha,
-    programa: aprendiz.programa,
-    jornada: nuevo.jornada,
-    mensaje: 'Votante registrado, puede votar.'
-  });
 });
 
 export default router;
